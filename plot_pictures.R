@@ -1,18 +1,20 @@
 #setwd('/mnt/dev/rakitko/hbef/')
+name <- 'thin_6'
+path <- paste0('./Images/',name,'/')
 
-path <- './Images/RHO_big_delta_t/'
-dir.create(path)
-variable <- '_rho'
+variable <- paste0('_',name)
 
 
 def_plt <- par('plt')
 
-dim           <- 60
-time          <- 100
-delta_t       <- 3600
+load(paste0(path,'/parameters.Rdata'))
+dim           <- parameters$dim
+time          <- parameters$time / parameters$thin_time_for_filer
+delta_t       <- parameters$delta_t
 Re            <- 6370000  
-m             <- 4 #OBS GRID MESH SIZE
-TOTAL         <- 5000 # number of total repeats (=L, in old versions)
+#m             <- 4 #OBS GRID MESH SIZE
+TOTAL         <- parameters$M # number of total repeats (=L, in old versions)
+
 
 load(paste0(path,'diag_mean.RData'))
 load(paste0(path,'spectr_mean.RData'))
@@ -62,11 +64,11 @@ for(step in 51:time){
 }
 mean_err <- mean(est_err)
 
-m_e <- round(mean_err,2)
+m_e <- round(mean_err,0)
 png(paste0(path,'microscale',variable,'.png'), width=5.1, height=5.1, units = "in", res=300)
 par(mai=c(1.2,1.2,0.7,0.7))
-plot(true_val, est_err, xlab = expression(lambda[true]), ylab = expression(lambda-lambda[true]), main = bquote(paste('Bias ',lambda, ', mean = ', .(m_e))), 
-     cex.lab = 1.5, cex.axis = 1.5)
+plot(true_val, est_err, xlab = expression(lambda[true]), ylab = bquote(paste('<',lambda,'> - ',lambda[true])), main = bquote(paste('(c)  Bias ',lambda, ', mean = ', .(m_e))), 
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
 lines(lowess(true_val, est_err, f = 0.3), col = 'aliceblue', lwd=3)
 dev.off()
 
@@ -82,12 +84,12 @@ for(step in 51:time){
   true_val <- c(true_val, macroscale_st_km_true[,step])
 }
 mean_err <- mean(est_err)
-m_e <- round(mean_err,2)
+m_e <- round(mean_err,0)
 
 png(paste0(path,'/macroscale',variable,'.png'), width=5.1, height=5.1, units = "in", res=300)
 par(mai=c(1.2,1.2,0.7,0.7))
-plot(true_val, est_err, xlab = expression(Lambda[true]), ylab = expression(Lambda-Lambda[true]), main = bquote(paste('Bias ',Lambda, ', mean = ', .(m_e))), 
-     cex.lab = 1.5, cex.axis = 1.5)
+plot(true_val, est_err, xlab = expression(Lambda[true]), ylab = bquote(paste('<',Lambda,'> - ',Lambda[true])), main = bquote(paste('(b)  Bias ',Lambda, ', mean = ', .(m_e))), 
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
 lines(lowess(true_val, est_err, f = 0.3), col = 'aliceblue', lwd=3)
 #lines(lowess(true_val, est_err, f = 0.3), col = 'lightcoral', lwd=3)
 dev.off()
@@ -103,11 +105,11 @@ for(step in 51:time){
   true_val <- c(true_val, microscale_st_km_true[,step])
 }
 mean_err <- mean(est_err)
-m_e <- round(mean_err,2)
+m_e <- round(mean_err,0)
 png(paste0(path,'/sd_microscale',variable,'.png'), width=5.1, height=5.1, units = "in", res=300)
 par(mai=c(1.2,1.2,0.7,0.7))
-plot(true_val, est_err, xlab = expression(lambda[true]), ylab = bquote(paste('SD(',lambda,') - ', lambda[true])), main = bquote(paste('Std.dev ',lambda, ', mean = ', .(m_e))), 
-     cex.lab = 1.5, cex.axis = 1.5)
+plot(true_val, est_err, xlab = expression(lambda[true]), ylab = bquote(paste('SD(',lambda,')')), main = bquote(paste('Std.dev ',lambda, ', mean = ', .(m_e))), 
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
 lines(lowess(true_val, est_err, f = 0.3), col = 'aliceblue', lwd=3)
 #lines(lowess(true_val, est_err, f = 0.3), col = 'lightcoral', lwd=3)
 dev.off()
@@ -122,12 +124,12 @@ for(step in 51:time){
   true_val <- c(true_val, macroscale_st_km_true[,step])
 }
 mean_err <- mean(est_err)
-m_e <- round(mean_err,2)
+m_e <- round(mean_err,0)
 png(paste0(path,'/sd_macroscale',variable,'.png'), width=5.1, height=5.1, units = "in", res=300)
 par(mai=c(1.2,1.2,0.7,0.7))
-plot(true_val, est_err, xlab = expression(Lambda[true]), ylab = bquote(paste('SD(',Lambda,') - ', Lambda[true])), 
+plot(true_val, est_err, xlab = expression(Lambda[true]), ylab = bquote(paste('SD(',Lambda,')')), 
      main = bquote(paste('Std.dev ',Lambda, ', mean = ', .(m_e))), 
-     cex.lab = 1.5, cex.axis = 1.5)
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
 lines(lowess(true_val, est_err, f = 0.3), col = 'aliceblue', lwd=3)
 dev.off()
 
@@ -140,10 +142,11 @@ for(step in 50:time){
   true_val <- c(true_val, diag(Cov_mat_enkf[,,step]))
 }
 mean_err <- mean(est_err)
+m_e <- round(mean_err,2)
 png(paste0(path,'/B',variable,'.png'), width=5.1, height=5.1, units = "in", res=300)
 par(mai=c(1.2,1.2,0.7,0.7))
-plot(true_val, est_err, xlab = paste0('B'), ylab = '<S> - B', main = paste0('Bias S;  mean = ', round(mean_err,2)), 
-     cex.lab = 1.5, cex.axis = 1.5)
+plot(true_val, est_err, xlab = paste0('B'), ylab = '<S> - B', main = bquote(paste('(a)  Bias S;  mean = ', .(m_e))), 
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
 lines(lowess(true_val, est_err, f = 0.3), col = 'aliceblue', lwd=3)
 dev.off()
 
@@ -157,10 +160,11 @@ for(step in 50:time){
   true_val <- c(true_val, diag(Cov_mat_enkf[,,step]))
 }
 mean_err <- mean(est_err)
+m_e <- round(mean_err,2)
 png(paste0(path,'/sd_B',variable,'.png'), width=5.1, height=5.1, units = "in", res=300)
 par(mai=c(1.2,1.2,0.7,0.7))
-plot(true_val, est_err, xlab = paste0('B'), ylab = 'sd(S)', main = paste0('St. dev S;  mean = ', round(mean_err,2)), 
-     cex.lab = 1.5, cex.axis = 1.5)
+plot(true_val, est_err, xlab = paste0('B'), ylab = 'SD(S)', main = bquote(paste('St. dev S;  mean = ', .(m_e))), 
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
 lines(lowess(true_val, est_err, f = 0.3), col = 'aliceblue', lwd=3)
 dev.off()
 
