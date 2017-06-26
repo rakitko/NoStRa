@@ -19,5 +19,6 @@ N;20
 localization_mult;4
 L_mult;5
 L_perturb_mult;1
+inflation_enkf;1.03
 seed_for_secondary_fields;12331232
 seed_for_filters;14564332
