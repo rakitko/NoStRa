@@ -22,3 +22,5 @@ L_perturb_mult;1
 inflation_enkf;1.03
 seed_for_secondary_fields;12331232
 seed_for_filters;14564332
+perform_enkf;1
+perform_cov_analysis;1

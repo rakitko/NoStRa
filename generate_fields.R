@@ -35,6 +35,8 @@ L_perturb_mult                  <- config[config$V1 == "L_perturb_mult", 2]
 inflation_enkf                  <- config[config$V1 == "inflation_enkf", 2]
 seed_for_secondary_fields       <- config[config$V1 == "seed_for_secondary_fields", 2]
 seed_for_filters                <- config[config$V1 == "seed_for_filters", 2]
+perform_enkf                    <- config[config$V1 == "perform_enkf", 2]
+perform_cov_analysis            <- config[config$V1 == "perform_cov_analysis", 2]
 # -----------
 
 
@@ -163,48 +165,84 @@ X             <- list()
 set.seed(seed_for_filters)
 print('Generating worlds')
 for(iter in 1:TOTAL){  
-  cat("\r",paste0(round(iter/TOTAL*100,0),'%'))
-  start_X     <- start_value(a, Sigma_mean, RHO_mean, Nu_mean, Re, dim)
-  X[[iter]]   <- generate_field_cpp(time, dim, start_X, delta_t, U, RHO, Sigma, Nu, 1, create_cov_matrix)
-
   ind_obs     <- seq(1,dim,m)
   ind_time    <- seq(1,time,thin_time_for_filer)
   
-  OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
-  OBS         <- X[[iter]][ind_obs,] +sqrt(R)*OBS_NOISE
+  start_X     <- start_value(a, Sigma_mean, RHO_mean, Nu_mean, Re, dim)
+  X[[iter]]   <- generate_field_cpp(time, dim, start_X, delta_t, U, RHO, Sigma, Nu, 1, create_cov_matrix)
+  X_true                   <- X[[iter]][,ind_time]
+  save(X_true, file = paste0(path,'/DATA/truth_',iter, '.Rdata'))
+  
+  if(iter == TOTAL){
+    filter$xi_full   <- X[[iter]]
+    filter$xi_sparse <- X[[iter]][,ind_time]
+  }
+  
+  if(perform_enkf == 1){
 
-  start_X     <- X[[iter]][,1]
-  enkf_res    <- ensembl_kalman_cpp(time, dim, delta_t, U, RHO, Sigma, Nu,
+  
+    OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
+    OBS         <- X[[iter]][ind_obs,] +sqrt(R)*OBS_NOISE
+
+    start_X     <- X[[iter]][,1]
+    enkf_res    <- ensembl_kalman_cpp(time, dim, delta_t, U, RHO, Sigma, Nu,
                                  1, R, ind_obs-1, OBS, start_X,
                                  create_cov_matrix, N, inflation_enkf_bounds, inflation_enkf_coef, C_enkf, thin_time_for_filer)
 
-  enkf_S_nonloc_arr_mean   <- enkf_S_nonloc_arr_mean + enkf_res$S_nonloc_arr
-  if(iter == TOTAL){
-    enkf_one_world <- enkf_res
+    enkf_S_nonloc_arr_mean   <- enkf_S_nonloc_arr_mean + enkf_res$S_nonloc_arr
+    if(iter == TOTAL){
+      enkf_one_world <- enkf_res
+    }
+    enkf_res$S_nonloc_arr    <- NULL
+    enkf_res$B_arr    <- NULL
+    save(enkf_res, file = paste0(path,'/DATA/enkf_',iter, '.Rdata'))
   }
-  enkf_res$S_nonloc_arr    <- NULL
-  enkf_res$B_arr    <- NULL
-  X_true                   <- X[[iter]][,ind_time]
-  save(enkf_res, file = paste0(path,'/DATA/enkf_',iter, '.Rdata'))
-  save(X_true, file = paste0(path,'/DATA/truth_',iter, '.Rdata'))
 }
 
-enkf_S_nonloc_arr_mean        <- enkf_S_nonloc_arr_mean / TOTAL
 
-Cov_mat_enkf                  <- array(0, dim = c(dim, dim, time / thin_time_for_filer))
 
-for(iter in 1:TOTAL){
-  load(paste0(path,'/DATA/truth_',iter,'.Rdata'))  
-  load(paste0(path,'/DATA/enkf_',iter,'.Rdata'))  
-  for(step in 1:(time/thin_time_for_filer)){
-    Cov_mat_enkf[,,step] <- Cov_mat_enkf[,,step] + ((enkf_res$X_f[,step] - X_true[,step])) %*% t(enkf_res$X_f[,step] - X_true[,step])
+print('Covariation matrix of xi')
+if(perform_cov_analysis == 1){
+  X_arr <- array(NA, dim = c(TOTAL, dim, time))
+  
+  for(iter in 1:TOTAL){
+    cat("\r",paste0(round(iter/TOTAL*100,0),'%'))
+    X_arr[iter,,] <- X[[iter]]
   }
-  cat("\r",paste0(round(iter/TOTAL*100,0),'%'))
+  
+  Cov_mat<- array(NA, dim = c(dim, dim, time))
+
+  for(t in 1:time){
+    Cov_mat[,,t] <- cov(X_arr[,,t])
+  }
+  filter$Cov_mat  <- Cov_mat
 }
 
-Cov_mat_enkf                  <- Cov_mat_enkf / TOTAL
-filter$enkf_one_world         <- enkf_one_world
+
+if(perform_enkf == 1){
+  enkf_S_nonloc_arr_mean        <- enkf_S_nonloc_arr_mean / TOTAL
+  
+  Cov_mat_enkf                  <- array(0, dim = c(dim, dim, time / thin_time_for_filer))
+  
+  for(iter in 1:TOTAL){
+    load(paste0(path,'/DATA/truth_',iter,'.Rdata'))  
+    load(paste0(path,'/DATA/enkf_',iter,'.Rdata'))  
+    for(step in 1:(time/thin_time_for_filer)){
+      Cov_mat_enkf[,,step] <- Cov_mat_enkf[,,step] + ((enkf_res$X_f[,step] - X_true[,step])) %*% t(enkf_res$X_f[,step] - X_true[,step])
+    }
+    cat("\r",paste0(round(iter/TOTAL*100,0),'%'))
+  }
+  
+  Cov_mat_enkf                  <- Cov_mat_enkf / TOTAL
+  filter$enkf_one_world         <- enkf_one_world
+  filter$enkf_S_nonloc_arr_mean <- enkf_S_nonloc_arr_mean
+  filter$Cov_mat_enkf           <- Cov_mat_enkf
+}
+
+
 filter$parameters             <- parameters
-filter$enkf_S_nonloc_arr_mean <- enkf_S_nonloc_arr_mean
-filter$Cov_mat_enkf           <- Cov_mat_enkf
+filter$Rho                    <- RHO
+filter$Nu                     <- Nu
+filter$U                      <- U
+filter$Sigma                  <- Sigma[,1:time]
 save(filter, file = paste0(path,'/filter.RData'))
