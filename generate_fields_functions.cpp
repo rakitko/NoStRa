@@ -409,10 +409,7 @@ List ensembl_kalman_cpp(int time, int dim, double delta_t, NumericMatrix U, Nume
     return Rcpp::List::create(Rcpp::Named("X_a") = X_a,
                               Rcpp::Named("X_f") = X_f,
                               Rcpp::Named("B_arr") = B_arr,
-                              Rcpp::Named("S_nonloc_arr") = S_nonloc_arr,
-                              Rcpp::Named("B") = B,
-                              Rcpp::Named("spectr") = spectr,
-                              Rcpp::Named("diag") = diag);
+                              Rcpp::Named("S_nonloc_arr") = S_nonloc_arr);
 }          
 
 

@@ -60,6 +60,7 @@ inflation_beta                  <- 0.4*0
 
 # initialize arrays and dirs
 enkf_S_nonloc_arr_mean          <- array(0, dim = c(dim, dim, time/thin_time_for_filer))
+filter                          <- list()
 dir.create(path)
 dir.create(paste0(path,'/DATA'))
 
@@ -178,7 +179,11 @@ for(iter in 1:TOTAL){
                                  create_cov_matrix, N, inflation_enkf_bounds, inflation_enkf_coef, C_enkf, thin_time_for_filer)
 
   enkf_S_nonloc_arr_mean   <- enkf_S_nonloc_arr_mean + enkf_res$S_nonloc_arr
+  if(iter == TOTAL){
+    enkf_one_world <- enkf_res
+  }
   enkf_res$S_nonloc_arr    <- NULL
+  enkf_res$B_arr    <- NULL
   X_true                   <- X[[iter]][,ind_time]
   save(enkf_res, file = paste0(path,'/DATA/enkf_',iter, '.Rdata'))
   save(X_true, file = paste0(path,'/DATA/truth_',iter, '.Rdata'))
@@ -198,7 +203,7 @@ for(iter in 1:TOTAL){
 }
 
 Cov_mat_enkf                  <- Cov_mat_enkf / TOTAL
-filter                        <- list()
+filter$enkf_one_world         <- enkf_one_world
 filter$parameters             <- parameters
 filter$enkf_S_nonloc_arr_mean <- enkf_S_nonloc_arr_mean
 filter$Cov_mat_enkf           <- Cov_mat_enkf
