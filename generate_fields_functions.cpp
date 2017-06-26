@@ -231,18 +231,6 @@ NumericMatrix generate_field_cpp(int time, int dim, NumericVector start_X, doubl
   return X;
 }
 
-
-// [[Rcpp::export]]
-NumericVector temp(arma::mat X, arma::mat Y, arma::colvec z) {
-
-  arma::mat result(10,10);
-  for(int i=0; i<10; i++){
-    result[i,i] = i;
-  }
-
-  return rnorm(10,0,3);
-}
-
 // [[Rcpp::export]]
 int generate(int time, int dim, NumericVector start_X, double delta_t, 
              NumericMatrix U, NumericMatrix RHO, NumericMatrix Sigma, NumericMatrix Nu, double L_C,
