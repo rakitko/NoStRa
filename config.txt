@@ -1,6 +1,6 @@
 dim;60
 stride;6
-time;200
+time_filter;200
 delta_t;3600
 Re;6370000
 u_mean;10
@@ -14,7 +14,7 @@ Nu_pi;0.05
 Sigma_kappa;4
 sd_U;40
 m;6
-TOTAL;10
+M;10
 N;20
 localization_mult;4
 L_mult;5

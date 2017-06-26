@@ -13,7 +13,7 @@ Rcpp::sourceCpp('generate_fields_functions.cpp')
 # -----------
 dim                             <- config[config$V1 == "dim", 2]
 thin_time_for_filer             <- config[config$V1 == "stride", 2]
-time                            <- config[config$V1 == "time", 2] * thin_time_for_filer
+time                            <- config[config$V1 == "time_filter", 2] * thin_time_for_filer
 delta_t                         <- config[config$V1 == "delta_t", 2]
 Re                              <- config[config$V1 == "Re", 2]
 u_mean                          <- config[config$V1 == "u_mean", 2]
@@ -27,7 +27,7 @@ Nu_pi                           <- config[config$V1 == "Nu_pi", 2]
 Sigma_kappa                     <- config[config$V1 == "Sigma_kappa", 2]
 sd_U                            <- config[config$V1 == "sd_U", 2]
 m                               <- config[config$V1 == "m", 2]                 #OBS GRID MESH SIZE
-TOTAL                           <- config[config$V1 == "TOTAL", 2]             # number of total repeats (=L, in old versions)
+TOTAL                           <- config[config$V1 == "M", 2]             # number of total repeats (=L, in old versions)
 N                               <- config[config$V1 == "N", 2]
 localization_mult               <- config[config$V1 == "localization_mult", 2]
 L_mult                          <- config[config$V1 == "L_mult", 2]
@@ -36,7 +36,7 @@ inflation_enkf                  <- config[config$V1 == "inflation_enkf", 2]
 seed_for_secondary_fields       <- config[config$V1 == "seed_for_secondary_fields", 2]
 seed_for_filters                <- config[config$V1 == "seed_for_filters", 2]
 perform_enkf                    <- config[config$V1 == "perform_enkf", 2]
-perform_cov_analysis            <- config[config$V1 == "perform_cov_analysis", 2]
+perform_cov_analysis            <- config[config$V1 == "compute_field_true_covs", 2]
 # -----------
 
 
@@ -87,17 +87,15 @@ parameters$Rho_pi               <- RHO_pi
 parameters$Nu_kappa             <- Nu_kappa
 parameters$Nu_pi                <- Nu_pi
 parameters$sd_U                 <- sd_U
-parameters$sdR                  <- sqrt_R
+parameters$sqrt_R               <- sqrt_R
 parameters$L_loc                <- L_loc
 parameters$sigma_kappa          <- Sigma_kappa
-parameters$sd_Sigma             <- sd_Sigma
 parameters$M                    <- TOTAL
 parameters$mesh_obs             <- m
 parameters$L_mean               <- L
 parameters$L_perturb            <- L_perturb
 parameters$N                    <- N
-parameters$C_enkf               <- C_enkf
-parameters$inflation_enkf_coef  <- inflation_enkf_coef 
+parameters$inflation_enkf_coef  <- inflation_enkf 
 parameters$stride               <- thin_time_for_filer
 
 
