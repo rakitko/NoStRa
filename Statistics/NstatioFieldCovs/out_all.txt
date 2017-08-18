@@ -1,0 +1,68 @@
+
+> cat("ntime=")
+ntime=
+> print(ntime)
+[1] 60
+
+> cat("M=")
+M=
+> print(M)
+[1] 500
+
+> cat("max(theta) / min(theta)=")
+max(theta) / min(theta)=
+> print(max(theta) / min(theta))
+[1] -9.036631
+
+> cat("max(V) / min(V)=")
+max(V) / min(V)=
+> print(max(V)/min(V))
+[1] 9.273775
+
+> cat("max(Lambda) / min(Lambda)=")
+max(Lambda) / min(Lambda)=
+> print(max(Lambda)/min(Lambda))
+[1] 5.844693
+
+> cat("max(lambda) / min(lambda)=")
+max(lambda) / min(lambda)=
+> print(max(lambda)/min(lambda))
+[1] 7.234637
+
+> V_decile_ratio=quantile(V[, 1:ntime], probs=0.9) / quantile(V[, 1:ntime], probs=0.1)
+
+> print(V_decile_ratio)
+    90% 
+3.11271 
+
+> Lambda_decile_ratio=quantile(Lambda[, 1:ntime], probs=0.9) / quantile(Lambda[, 1:ntime], probs=0.1)
+
+> print(Lambda_decile_ratio)
+     90% 
+2.221458 
+
+> sink()
+
+> cat("\n")
+
+
+>                   if(theta_name != "all"){
++ cat("shift_theta_V_opt=")
++ print(shift_theta_V_opt)
++ 
++ cat("crl_theta_V_max=")
++ print(crl_theta_V_m .... [TRUNCATED] 
+
+> cat("\n")
+
+
+> if(universe == "U") {
++   cat("nsmoo=")
++   print(nsmoo)
++   
++   cat("crl_Lambda_dUdx_smoothed=")
++   print(crl_Lambda_dUdx_smoothed)
++   
++   cat( .... [TRUNCATED] 
+
+> sink()

@@ -1,0 +1,54 @@
+
+> cat("max(V) / min(V)=")
+max(V) / min(V)=
+> print(max(V)/min(V))
+[1] 34.73085
+
+> cat("max(Lambda) / min(Lambda)=")
+max(Lambda) / min(Lambda)=
+> print(max(Lambda)/min(Lambda))
+[1] 9.587903
+
+> cat("max(lambda) / min(lambda)=")
+max(lambda) / min(lambda)=
+> print(max(lambda)/min(lambda))
+[1] 3.427404
+
+> cat("V_decile_ratio=")
+V_decile_ratio=
+> V_decile_ratio=quantile(V[, 10:ntime], probs=0.9) / quantile(V[, 10:ntime], probs=0.1) # 10: to avoid ini transient
+
+> print(V_decile_ratio)
+     90% 
+4.047362 
+
+> cat("Lambda_decile_ratio=")
+Lambda_decile_ratio=
+> Lambda_decile_ratio=quantile(Lambda[, 10:ntime], probs=0.9) / quantile(Lambda[, 10:ntime], probs=0.1)
+
+> print(Lambda_decile_ratio)
+     90% 
+1.665369 
+
+> cat("lambda_decile_ratio=")
+lambda_decile_ratio=
+> lambda_decile_ratio=quantile(lambda[, 10:ntime], probs=0.9) / quantile(lambda[, 10:ntime], probs=0.1)
+
+> print(lambda_decile_ratio)
+     90% 
+1.532057 
+
+> cat("\n")
+
+
+> cat("SSCM_mean_rel_misfit=")
+SSCM_mean_rel_misfit=
+> print(mean_rel_misfit)
+[1] 0.2007044
+
+> cat("S1loc_rel_misfit=")
+S1loc_rel_misfit=
+> print(S1loc_rel_misfit)
+[1] 0.5699909
+
+> sink()
