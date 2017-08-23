@@ -29,12 +29,10 @@ as in the Observing Systems Simulation Experiments (OSSE) methodology,
 but also with the true field and error ``covariances of the day''.
 The capabilities of the  doubly stochastic model are illustrated 
 in numerical experiments with the Ensemble Kalman Filter (EnKF).
-A  spectral-space examination of the {true} EnKF prior covariances
-suggests a new parametric non-stationary spatial covariance model. 
-The spatial model is shown to yield a good approximation to the true covariances
-and thus can potentially be used to regularize the specification of the
-prior covariances in ensemble based data assimilation techniques.
-
+The capabilities of the  doubly stochastic model are illustrated 
+in numerical experiments with the Ensemble Kalman Filter (EnKF).
+It is shown that the accuracy of the forecast-ensemble sample covariance matrix
+can be substantially improved by  its temporal smoothing.
 The main author of the R package is Alexander Rakitko rakitko@gmail.com.
 
 The corresponding author of the paper is Michael Tsyrulnikov mik.tsyrulnikov@gmail.com.
@@ -88,9 +86,9 @@ Then, in folder EnKF-covs, execute the script ExamEnKFcovs.R.
 -> Various plots related to the EnKF's prior covariances will be created.
 
 
-17 Aug 2017
-A.Rakitko
+23 Aug 2017
 M.Tsyrulnikov
+A.Rakitko
 
 
 
