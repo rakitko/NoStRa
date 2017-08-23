@@ -1,7 +1,7 @@
 # Examine the EnKF's true & ensemble B.
 #
 # M Tsyrulnikov
-# 17 Aug 2017
+# 23 Aug 2017
 
 library(mixAK)
 library(MASS)
@@ -10,12 +10,21 @@ library(plot3D)
 library(psych)
 
 source('functions_prior.R')
+source('est_crf_timser.R')
 source('mx_fft.R')
 source('fft_Rspe_rearrange.R')
 source('mx_fft_Rspe_rearrange.R')
 source('create_LocMx.R')
+source('Diag_flt.R')
 source('Cov2VarCor.R')
 source('ndiag.R')
+
+
+SelfClim = FALSE # TRUE FALSE  # if TRUE, WRITE the clim stats to the
+# B_tmean_$seed_for_secondary_fields.RData file, 
+# where  seed_for_secondary_fields is taken from the input filter.RData file.
+# otherwise, READ several B_tmean matrices from the B_tmean_$seed_clim.RData files.
+ExtClim = !SelfClim  
 
 
 file=paste0("./filter.RData") 
@@ -38,7 +47,7 @@ seed_for_filters
 
 # skip initial transient in the time series
 
-ini=1 #  >0 !,  # 30
+ini=30 #  >0 !,  # 30
 ini1= ini +1
 ntime=ntime_full - ini
 
@@ -140,10 +149,38 @@ lambda_S=microscale_S_st_km
 plot(V[1,1:(ntime/2)], main="V (circles) & V_S")
 lines(V_S[1,1:(ntime/2)])
 
+#!!!!!
+#B=CRM  # TMP
+#!!!!!
+
+#---------------------------------------------
+# Lclz radius
+
+mult_loc=1
+#if(N == 10){mult_loc=1.0}
+#if(N == 20){mult_loc=1.2}
+
+cLoc=filter$parameters$L_loc /1000 * mult_loc # km
+cLoc_rad=cLoc / rekm
+cLoc_spacings=cLoc_rad *n/(2*pi)
+
+LocMx = create_LocMx(n, cLoc_spacings, "GC5")
+
+
+CRM_loc=CRM # init
+CRM_S_loc=CRM
+
+for (t in (1:ntime)){
+  CRM_loc[,,t]   = CRM[,,t]   * LocMx
+  CRM_S_loc[,,t] = CRM_S[,,t] * LocMx
+}
 
 #--------------------
 # Selected i,t stats
 
+SpaCrl_plots=FALSE
+if(SpaCrl_plots){
+  
 numplot=3
 for (iplot in c(1:numplot)) {
   
@@ -222,7 +259,9 @@ for (iplot in c(1:numplot)) {
   dev.off()
 
 } # End for(iplot in c(1:numplot))  
-  
+
+}  # End if(SpaCrl_plots)
+
 #------------------------------------------------
 #------------------------------------------------
 # True vs. ensemble covs: 
@@ -626,20 +665,6 @@ plot(apply(V, 2, mean), type="l", main="Space-mean V")
 #--------------------------------------------
 # Max CRM_S error
 
-cLoc=filter$parameters$L_loc /1000  # km
-cLoc_rad=cLoc / rekm
-cLoc_spacings=cLoc_rad *n/(2*pi)
-
-LocMx_ = create_LocMx(n, cLoc_spacings, "GC5")
-
-CRM_loc=CRM # init
-CRM_S_loc=CRM
-
-for (t in (1:ntime)){
-  CRM_loc[,,t]   = CRM[,,t]   * LocMx_
-  CRM_S_loc[,,t] = CRM_S[,,t] * LocMx_
-}
-
 ind_max=which(abs(CRM_S_loc-CRM_loc) == max(abs(CRM_S_loc-CRM_loc)), arr.ind=TRUE)
 ix1=ind_max[1]
 ix2=ind_max[2]
@@ -690,6 +715,425 @@ lines(CRM_S[ix,,it])
 
 #------------------------------------------------
 #------------------------------------------------
+# Time mean B for current seed --- B_clim
+
+B_tmean=matrix(0, nrow=n, ncol=n)
+
+for (i in 1:n) {
+  for (j in 1:n){
+    B_tmean[i,j]=mean(B[i,j,])
+  }
+}
+
+B_clim=B_tmean
+B_tmean_loc=B_tmean
+
+if(SelfClim){  # Write  B_tmean  to the file
+  save(B_tmean, file=paste0("B_tmean_", seed_for_secondary_fields,".RData"))
+  # use  B_clim=B_tmean  assigned above
+  nclim=1
+  
+}else{
+  # Read from several B_tmean files & average over them
+  
+  B_clim[,]=0
+  nclim=0
+  
+  for(seed in 
+      c(10500,
+        10510,
+        10530,
+        10590,
+        101520,
+        101570,
+        101610
+              ) ){
+    
+    file=paste0("./B_tmean_", seed, ".RData") 
+    load(file)
+    B_clim=B_clim + B_tmean
+    nclim=nclim +1
+  }
+  nclim
+  B_clim = B_clim / nclim
+}
+
+
+plot(diag(B_clim), type="l", lwd=2, main=paste0("diag(B_clim, B_tmean_loc)", nclim))
+lines(diag(B_tmean_loc), type="l")
+
+image2D(B_tmean_loc, main="B_tmean_loc")  
+image2D(B_clim, main="B_clim")  
+
+# Spe space clim
+
+FB_clim=mx_fft(B_clim, "f")
+image2D(Re(FB_clim), main="Re(FB_clim)")
+ndiag(FB_clim)
+FB_clim_diag=diag(diag(FB_clim))  # the statio component
+
+#------------------------------------------------
+# Perform time filtering of S1 (a single-world realization) (non-lclz):
+# T1(1)=S1(1),
+# T1(k) = mu*T1(k-1) + (1-mu)*S1(k)
+# mu=1-eps  =>  tau=1/eps (time scale in time steps)
+
+mult_loc=1.0
+#if(N == 10){mult_loc=1.0}
+#if(N == 20){mult_loc=1.2}
+
+cLoc=filter$parameters$L_loc /1000 * mult_loc # km
+cLoc_rad=cLoc / rekm
+cLoc_spacings=cLoc_rad *n/(2*pi)
+LocMx = create_LocMx(n, cLoc_spacings, "GC5")
+
+
+mult_loc_T=1.7
+cLoc=filter$parameters$L_loc /1000 * mult_loc_T # km
+cLoc_rad=cLoc / rekm
+cLoc_spacings=cLoc_rad *n/(2*pi)
+
+LocMx_T = create_LocMx(n, cLoc_spacings, "GC5")
+
+if(Ta_h == 6)  w_EVS=0.5
+if(Ta_h == 12) w_EVS=0.6
+
+w_EVT=0.7
+# 0.8: 74.35
+# 0.75: 73.8
+# 0.7: 73.7
+
+#-------------------------------------
+# FILTERING
+
+#----------------
+simple_FLT=TRUE  # TRUE  FALSE
+
+if(simple_FLT == TRUE){
+  
+  if(Ta_h == 6)  eps=0.08
+  if(Ta_h == 12) eps=0.35
+  # Ta=6: eps=0.08 
+  # Ta=12: eps=0.3-0.35
+  # Ta=24: eps=0.45
+  mu=1-eps
+  T1=S1 # init
+  
+  for (t in 2:ntime) {
+    T1[,,t]=mu*T1[,,t-1] + eps* S1[,,t]
+  }
+  
+}
+
+#----------------
+# Use a spatial flt in the cov fcst.
+
+spe_FLT=!simple_FLT
+if(spe_FLT == TRUE){
+
+  
+if(Ta_h == 6)  eps=0.08
+if(Ta_h == 12) eps=0.3
+  # Ta=6: eps=0.08 
+  # Ta=12: eps=0.3
+  # Ta=24: eps=0.45 
+mu=1-eps  
+  
+  # Define the spe-space filter
+  # 
+  # tranfu(m) = 1/(1 + (m/m0)^2),
+  # 
+  # whr m0 is the spe scale such that lambda=1/m0
+  # 
+  # R spe vector :  f0, f1, ..., f(n/2),f(-n/2 +1),..., f(-1)
+   
+tranfu=c(1:n) # the filter transfer fu
+m_max=n/2
+
+coef_lambda=0.4
+
+flt_length=mesh * coef_lambda
+m0=1/flt_length
+
+tranfu[]=0
+
+m=0
+im=m+1
+tranfu[im]=1 # m=0
+
+m=m_max
+im=m+1
+tranfu[im]=1/(1 + (m/m0)^2)  # m=m_max
+
+for (m in 1:(m_max-1)){
+  im=m+1
+  tranfu[im] = 1/(1 + (m/m0)^2)
+  tranfu[n-m+1] = tranfu[im]
+}
+plot(tranfu, main="tranfu")
+#tranfu
+
+respfu=fft(tranfu, inverse=TRUE)
+#max(Im(respfu))
+plot(Re(respfu[1:10]), main="respfu[1:10]")
+
+SFLT=diag(tranfu)  # diag mx
+
+# To maintain the expectation of T, which is reduced at the wvn m
+# by the factor of tranfu(n)^2,
+# we add the respective B_clim wvn=m component multiplied by (1 - tranfu(m)^2),
+# ie pre & post multiply FB_clim by diag(sqrt(1 - tranfu(:)^2))
+
+SFLT_clim=diag(sqrt(1-tranfu^2))
+
+T1=S1 # init
+for (t in 2:ntime) {
+  T=T1[,,t-1]
+  fT=mx_fft(T, "f")
+  fT_flt=SFLT %*% fT %*% SFLT
+  T_flt=Re( mx_fft(fT_flt, "b") )
+  T1[,,t]=mu*T_flt + eps* S1[,,t] #*LocMx
+  
+  FB_clim_flt = SFLT_clim %*% FB_clim %*% SFLT_clim
+  B_clim_flt=Re( mx_fft(FB_clim_flt, "b") )
+  T1[,,t]=mu*(T_flt + B_clim_flt) + eps* S1[,,t] #*LocMx
+}
+
+} # End if(spe_FLT
+   
+#-------------------------------------End Filtering
+# Evaluate the results
+
+F_B=c(1:ntime)
+F_Bclim_mB=c(1:ntime)
+F_S1loc_mB=c(1:ntime)
+F_Tloc_mB=c(1:ntime)
+F_EV_mB=c(1:ntime)
+F_EVT_mB=c(1:ntime)
+
+Tr_B=c(1:ntime)
+Tr_climBmB=c(1:ntime)
+Tr_S1mB=c(1:ntime)
+Tr_EVmB=c(1:ntime)
+Tr_T1mB=c(1:ntime)
+
+for (t in 1:ntime) {
+  # traditional hybrid EnVar
+  S1loc=S1[,,t] * LocMx
+  T1loc=T1[,,t] * LocMx_T
+  B_EV =w_EVS * S1loc + (1-w_EVS)*B_clim
+  B_EVT=w_EVT * T1loc + (1-w_EVT)*B_clim
+  
+  F_B[t]         =norm(         B[,,t], "F")
+  F_Bclim_mB[t]  =norm(B_clim - B[,,t], "F")
+  F_S1loc_mB[t]  =norm(S1loc  - B[,,t], "F")
+  F_Tloc_mB[t]   =norm(T1loc  - B[,,t], "F")
+  F_EV_mB[t]     =norm(B_EV   - B[,,t], "F")
+  F_EVT_mB[t]    =norm(B_EVT  - B[,,t], "F")
+
+  #Tr_B[t]      =sqrt( sum( (diag( (         B[,,t]) ))^2 ) )
+  #Tr_climBmB[t]=sqrt( sum( (diag( (B_clim - B[,,t]) ))^2 ) )
+  #Tr_S1mB[t]   =sqrt( sum( (diag( (S1loc  - B[,,t]) ))^2 ) )
+  #Tr_EVmB[t]   =sqrt( sum( (diag( (B_EV   - B[,,t]) ))^2 ) )
+  #Tr_T1mB[t]   =sqrt( sum( (diag( (T1loc  - B[,,t]) ))^2 ) )
+  
+  Tr_B[t]      =( sum( (diag( (         B[,,t]) )) ) ) # biases
+  Tr_climBmB[t]=( sum( (diag( (B_clim - B[,,t]) )) ) )
+  Tr_S1mB[t]   =( sum( (diag( (S1loc  - B[,,t]) )) ) )
+  Tr_EVmB[t]   =( sum( (diag( (B_EV   - B[,,t]) )) ) )
+  Tr_T1mB[t]   =( sum( (diag( (T1loc  - B[,,t]) )) ) )
+}
+
+
+t=141
+S1loc=S1[,,t] * LocMx
+B_EV=w_EVS * S1loc + (1-w_EVS)*B_clim
+T1loc=T1[,,t]*LocMx_T
+B_EVT=w_EVT * T1loc + (1-w_EVT)*B_clim
+  
+plot(diag(B[,,t]), main=paste0("B at t=", t))
+lines(diag(B_clim))
+lines(diag(S1[,,t] * LocMx), col="green")
+lines(diag(B_EV), col="blue")
+lines(diag(T1[,,t]*LocMx_T), col="red")
+
+image2D(B_clim, main="B")
+image2D(B[,,t], main="B")
+image2D(B_EV, main="B_EV")
+image2D(T1[,,t]*LocMx_T, main="T")
+
+
+F_B_mean=mean(F_B)
+F_Bclim_mB_mean=mean(F_Bclim_mB)
+F_S1loc_mB_mean=mean(F_S1loc_mB)
+F_Tloc_mB_mean=mean(F_Tloc_mB)
+F_EV_mB_mean=mean(F_EV_mB)
+F_EVT_mB_mean=mean(F_EVT_mB)
+
+Tr_B_mean=mean(Tr_B)
+Tr_Bclim_mB_mean=mean(Tr_climBmB)
+Tr_S1loc_mB_mean=mean(Tr_S1mB)
+Tr_EV_mB_mean=mean(Tr_EVmB)
+Tr_T1_Tloc_mB_mean=mean(Tr_T1mB)
+
+F_B_mean
+F_Bclim_mB_mean
+F_S1loc_mB_mean
+F_Tloc_mB_mean
+F_EVT_mB_mean
+F_EV_mB_mean
+
+Tr_B_mean
+Tr_Bclim_mB_mean
+Tr_S1loc_mB_mean
+Tr_EV_mB_mean
+Tr_T1_Tloc_mB_mean
+
+#------------
+# Plots
+
+ntime_plot=ntime/2
+mn=min(
+  min(F_B         [1:ntime_plot]),
+  min(F_S1loc_mB  [1:ntime_plot]),
+  min(F_Tloc_mB   [1:ntime_plot]), 
+  min(F_EV_mB     [1:ntime_plot])
+) *1.0
+
+mx=max(
+  max(F_B         [1:ntime_plot]),
+  max(F_S1loc_mB  [1:ntime_plot]),
+  max(F_Tloc_mB[1:ntime_plot]), 
+  max(F_EV_mB     [1:ntime_plot])
+) *1.1
+
+pngname=paste0("BEvST_Fnorm.png")
+png(pngname, width=5.1, height=5.1, units = "in", res=300)
+par(mai=c(1.2,1.2,0.7,0.7))
+
+plot(F_B[1:ntime_plot], 
+     ylim=c(mn,mx), 
+     xlab="Time step", ylab="Frobenius Norm", type="p", pch=1, col="black",
+     main=paste("Errors in covariances"),
+     cex.main=1.5, cex.axis=1.2, cex.lab=1.4)
+
+lines(F_EV_mB[1:ntime_plot], type="l", lwd=1.5, lty=3, col="black")
+lines(F_S1loc_mB[1:ntime_plot], type="l", lwd=1, col="black")
+lines(F_Tloc_mB[1:ntime_plot], type="l", lwd=2.5, col="black")
+
+leg.txt=c(as.expression( bquote( "|B|" ) ), 
+          as.expression( bquote( "|" ~ "B"[hybr] ~ "-B|" ) ) ,
+          as.expression( bquote( "|" ~ "S"[loc] ~ "-B|" ) ), 
+          as.expression( bquote( "|" ~ tilde("S") ~ "-B|" ) ) )
+leg.col<-c("black", "black", "black", "black")
+legend("topright", inset=0, leg.txt, col=leg.col, lwd=c(NA,1.5,1,2.5), 
+       lty=c(NA,3,1,1), pt.lwd=1.0, pch=c(1,NA,NA,NA),
+       cex=1.0, pt.cex=1, bg="white")
+dev.off()
+
+
+ntime_plot=ntime/2
+mn=min(
+  min(F_S1loc_mB  [1:ntime_plot]),
+  min(F_EVT_mB    [1:ntime_plot]), 
+  min(F_EV_mB     [1:ntime_plot])
+) *1.0
+
+mx=max(
+  max(F_S1loc_mB  [1:ntime_plot]),
+  max(F_EVT_mB    [1:ntime_plot]), 
+  max(F_EV_mB     [1:ntime_plot])
+) *1
+
+pngname=paste0("SEET_Fnorm.png")
+png(pngname, width=5.1, height=5.1, units = "in", res=300)
+par(mai=c(1.2,1.2,0.7,0.7))
+
+plot(F_S1loc_mB[1:ntime_plot], 
+     ylim=c(mn,mx), 
+     xlab="Time step", ylab="Frobenius Norm",  type="l", lwd=1.5, lty=3, col="black",
+     main=paste("Errors in covariances"),
+     cex.main=1.5, cex.axis=1.2, cex.lab=1.4)
+
+lines(F_EV_mB [1:ntime_plot], type="l", lwd=1, col="black")
+lines(F_EVT_mB[1:ntime_plot], type="l", lwd=2.5, col="black")
+
+leg.txt=c(
+  as.expression( bquote( "|" ~ "S"[loc] ~ "-B|" ) ),
+  as.expression( bquote( "|" ~ "B"[hybr] ~ "-B|" ) ) ,
+  as.expression( bquote( "|" ~ "B"[hybr-T] ~ "-B|" ) ) 
+)
+
+leg.col<-c("black", "black", "black")
+legend("topright", inset=0, leg.txt, col=leg.col, lwd=c(1.5,1,2.5), 
+       lty=c(3,1,1), pt.lwd=1.0, pch=c(NA,NA,NA),
+       cex=1.0, pt.cex=1, bg="white")
+dev.off()
+
+
+
+ntime_plot=ntime/2
+mn=min(
+  min(F_Bclim_mB  [1:ntime_plot]), 
+  min(F_S1loc_mB  [1:ntime_plot]),
+  min(F_Tloc_mB   [1:ntime_plot])
+) *1.0
+
+mx=max(
+  max(F_Bclim_mB  [1:ntime_plot]), 
+  max(F_S1loc_mB  [1:ntime_plot]),
+  max(F_Tloc_mB   [1:ntime_plot])
+  ) *1
+
+pngname=paste0("CST_Fnorm.png")
+png(pngname, width=5.1, height=5.1, units = "in", res=300)
+par(mai=c(1.2,1.2,0.7,0.7))
+
+plot(F_Bclim_mB[1:ntime_plot], 
+     ylim=c(mn,mx), 
+     xlab="Time step", ylab="Frobenius Norm",  type="p", col="black",
+     main=paste("Errors in covariances"),
+     cex.main=1.5, cex.axis=1.2, cex.lab=1.4)
+
+lines(F_S1loc_mB [1:ntime_plot], type="l", lwd=1.5, lty=3, col="black")
+lines(F_Tloc_mB[1:ntime_plot], type="l", lwd=2, col="black")
+
+leg.txt=c(
+          as.expression( bquote( "|" ~ "B"[clim] ~ "-B|" ) ),
+          as.expression( bquote( "|" ~ "S"[loc]  ~ "-B|" ) ),
+          as.expression( bquote( "|" ~ "T"[loc]  ~ "-B|" ) )
+          )
+          
+leg.col<-c("black", "black", "black")
+legend("topright", inset=0, leg.txt, col=leg.col, lwd=c(NA,1.5,2), 
+       lty=c(1,3,1), pt.lwd=1.0, pch=c(1,NA,NA),
+       cex=1.0, pt.cex=1, bg="white")
+dev.off()
+
+
+errvar=FALSE
+if(errvar == TRUE){
+  
+pngname=paste0("BClimS1T1_trace.png")
+png(pngname, width=5.1, height=5.1, units = "in", res=300)
+par(mai=c(1.2,1.2,0.7,0.7))
+plot(Tr_B[1:ntime_plot], ylim=c(0,max(Tr_B[1:ntime_plot])),
+     xlab="Time step", ylab="Rms, diagonal entries", type="p", pch=1,
+     main=paste("Errors in variances.Ta=", Ta_h,"h"),
+     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
+lines(Tr_S1mB[1:ntime_plot], type="l", lwd=1, col="blue")
+lines(Tr_T1mB[1:ntime_plot], type="l", lwd=2, col="black")
+lines(Tr_climBmB[1:ntime_plot], type="l", lwd=3, col="green")
+leg.txt<-c('|B|', '|S-B|', '|T-B|')
+leg.col<-c("black", "blue", "black")
+legend("topright", inset=0, leg.txt, col=leg.col, lwd=c(NA,1,2), 
+       lty=c(NA,1,1), pt.lwd=2.0, pch=c(1,NA,NA),
+       cex=1.4, pt.cex=1, bg="white")
+dev.off()
+
+}  # End if(errvar == TRUE)
+
+#------------------------------------------------
 # Compare space-time-mean rms errors in Xf & Xa (one world)
 
 sdXf = sqrt( sum(filter$enkf_one_world$X_f[,ini1:ntime_full]^2) / (n*ntime))
@@ -705,580 +1149,6 @@ sdXamX = sqrt( sum((filter$enkf_one_world$X_a[,ini1:ntime_full] - X_true[,ini1:n
 
 sdXfmX
 sdXamX
-
-
-#------------------------------------------------
-#------------------------------------------------
-# Fourier space calcul
-
-# Time mean B
-
-B_clim=matrix(0, nrow=n, ncol=n)
-
-for (i in 1:n) {
-  for (j in 1:n){
-    B_clim[i,j]=mean(B[i,j,])
-  }
-}
-
-# Lclz radius
-
-mult_loc=1
-if(N == 10){mult_loc=1.0}
-if(N == 20){mult_loc=1.2}
- 
-cLoc=filter$parameters$L_loc /1000 * mult_loc # km
-cLoc_rad=cLoc / rekm
-cLoc_spacings=cLoc_rad *n/(2*pi)
-
-LocMx = create_LocMx(n, cLoc_spacings, "GC5")
-
-# Mx FFT
-
-FBclim=mx_fft(B_clim, "f")
-#tmp=mx_fft(FBclim, "b")
-#max(abs(tmp - B_clim)) # test OK.
-
-FBclim_CRM = Cov2VarCor(FBclim)$C
-FBclim_var = Cov2VarCor(FBclim)$v
-
-# How diagonal is FBclim?
-
-ndiag_FBclim=ndiag(FBclim)
-ndiag_FBclim
-
-plot(abs(FBclim[1,]), main="abs(FBclim[1,])")
-plot(abs(FBclim[10,]), main="abs(FBclim[10,])")
-plot(abs(FBclim[30,]), main="abs(FBclim[30,])")
-
-# ==> quite diagonal..
-
-# neglect non-diagonal entries of FBclim 
-#  (as B_clim should be homogeneous in this model)
-
-FBclim = diag(diag(Re(FBclim)))
-
-FB       = array(0+0i, dim=c(n,n,ntime)) # F(B)
-FFB      = array(0+0i, dim=c(n,n,ntime)) # F(B)
-
-FS1loc   = array(0+0i, dim=c(n,n,ntime)) # FFT(S1_loc)
-FBclim_err = array(0+0i, dim=c(n,n,ntime)) # FFT(B_clim-B)
-FS1loc_err = array(0+0i, dim=c(n,n,ntime)) # FFT(S1_loc-B)
-
-maFB      =matrix(0, nrow=n, ncol=n)
-mae_FBclim=matrix(0, nrow=n, ncol=n)
-mae_FS1loc=matrix(0, nrow=n, ncol=n)
-dS1loc=c(1:ntime)
-
-for (t in 1:ntime){
-  S1_loc=S1[,,t] *LocMx
-  FB      [,,t] = mx_fft(B[,,t], "f")  # \hat B =0
-  FBclim_err[,,t] = FBclim - FB[,,t] # mx_fft(B_clim - B[,,t], "f")
-  FS1loc[,,t] = mx_fft(S1_loc, "f")
-  FS1loc_err[,,t] = FS1loc[,,t] - FB[,,t] # mx_fft(S1_loc  - B[,,t], "f")
-
-  maFB      =maFB       + abs(FB      [,,t])
-  mae_FBclim=mae_FBclim + abs(FBclim_err[,,t])
-  mae_FS1loc=mae_FS1loc + abs(FS1loc_err[,,t])
-  
-  dS1loc[t] = norm(abs(S1_loc  - B[,,t]), "F") / 
-              norm(abs(          B[,,t]), "F")
-}
-
-rmse_S1loc_rel  = mean(dS1loc)
-rmse_S1loc_rel
-
-t=ntime/2.5
-tmp=Re(mx_fft_Rspe_rearrange(FB[,,t]))
-image2D(tmp, main="FB")
-
-tmp=Re(mx_fft_Rspe_rearrange(FBclim))
-image2D(tmp, main="FBclim")
-
-tmp=Re(mx_fft_Rspe_rearrange(FS1loc[,,t]))
-image2D(tmp, main="FS1loc")
-
-tmp=Re(mx_fft_Rspe_rearrange(FBclim_err[,,t]))
-image2D(tmp, main="FBclim_err")
-
-tmp=Re(mx_fft_Rspe_rearrange(FS1loc_err[,,t]))
-image2D(tmp, main="FS1loc_err")
-
-maFB      =maFB       /ntime
-mae_FBclim=mae_FBclim /ntime
-mae_FS1loc=mae_FS1loc /ntime
-
-dFa=mae_FS1loc - mae_FBclim
-dFB=maFB - mae_FBclim
-
-mean(dFB)
-max(dFB)
-min(dFB)
-
-# ==> dFB>0 ==> Bclim is always better than 0.
-
-
-wvns=c((-n/2):(n/2))
-wvns_posit=c(0:(n/2))
-
-          FBclimPlots=FALSE
-          if(FBclimPlots){
-
-pngname=paste0("dFB",mult_loc,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(Re(mx_fft_Rspe_rearrange(dFB)),
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="<0: 0 bett,  >0: Bclim bett",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-pngname=paste0("dFa_loc",mult_loc,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(Re(mx_fft_Rspe_rearrange(dFa)),
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="<0: S bett,  >0: Bclim bett",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-pngname=paste0("maeFBclim",mult_loc,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(Re(mx_fft_Rspe_rearrange(mae_FBclim)),
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="Mean abs err FBclim",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-pngname=paste0("maeFS1loc",mult_loc,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(Re(mx_fft_Rspe_rearrange(mae_FS1loc)),
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="Mean abs err FS1loc",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-dFa_sign=dFa
-dFa_sign[,]=0
-mx=max(abs(dFa))
-d=0 # mx/20
-
-ind_Sworse=which(dFa > d, arr.ind = TRUE)
-dFa_sign[ind_Sworse]=1
-
-ind_Sbett=which(dFa< -d, arr.ind = TRUE)
-dFa_sign[ind_Sbett]=-1
-
-pngname=paste0("dFa_sign.png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(dFa_sign, xlab="Wavenumber", ylab="Wavenumber",
-        x=wvns, y=wvns,
-        main=paste("1:CLIM better,-1:S better"),
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-sum(dFa[ind_Sbett])
-sum(dFa[ind_Sworse])
-
-                } # End if(FBclimPlots)
-
-#-----------------------------------------------
-#-----------------------------------------------
-# Compute Spectral Variances.
-# NB after mx_fft_Rspe_rearrange, the wvns go as follows:
-# f(n/2),f(-n/2 +1), ..., f(-1), f(0), f(1),..., f(n/2)
-# so that m=0 is at the (n/2+1)st place in the (n+1)-vector
-# (for the even n).
-#
-# NB: (1) Spectral Variances are purely real (for both real & cplx 
-#         phy-space processes).
-#     (2) v(-m)=v(m) (for a real phy-space process).
-#--
-# NB:
-# im=n/2 + m +1
-# m=im - n/2 -1
-
-np1=n+1
-nd2=n/2
-nd2p1=nd2 +1
-
-# NB: In what follows, the v-matrices/vectors correspond to only non-negative wvns
-
-v_true =matrix(0, nrow=nd2p1, ncol=ntime)  # v(m,t)
-v_S1loc=matrix(0, nrow=nd2p1, ncol=ntime)
-
-tmp=diag( Re(FBclim) ) 
-v_clim=tmp[1:nd2p1]
-
-for (t in 1:ntime){
-  tmp=diag( Re(FB[,,t]) ) 
-  v_true[,t]=tmp[1:nd2p1]
-  
-  tmp=diag( Re(FS1loc[,,t]) ) 
-  v_S1loc[,t]=tmp[1:nd2p1]
-}
-
-v_S1loc_full =matrix(0, nrow=n, ncol=ntime)
-v_true_full  =matrix(0, nrow=n, ncol=ntime)
-
-for (t in 1:ntime){
-  v_S1loc_full[,t] =c(v_S1loc [,t], rev(v_S1loc[2:nd2,t]))
-  v_true_full[,t]  =c(v_true[,t],   rev(v_true [2:nd2,t]))
-}
-
-#-----------------------------------------------
-#-----------------------------------------------
-# Examine Spectral Correlations
-
-FCRM_e  =FS1loc # init
-FCRM_t  =FB     # init
-FFCRM_t =FB     # init
-
-for (t in 1:ntime) {
-  std=sqrt(diag(Re(FB[,,t])))      # NB: spe VARs are real
-  FCRM_t[,,t]= diag(1/std) %*% FB[,,t] %*% diag(1/std)
-  
-  std=sqrt(diag(Re(FS1loc[,,t])))  # NB: spe VARs are real
-  FCRM_e[,,t]= diag(1/std) %*% FS1loc[,,t] %*% diag(1/std)
-  
-  FFCRM_t[,,t]=mx_fft(FCRM_t[,,t], "b")
-}
-
-t=ntime/3.5
-
-image2D(Re(FCRM_t[,,t]) - diag(n), main="Re(FCRM_t[,,t]) - I")
-image2D(Im(FCRM_t[,,t]), main="Im(FCRM_t[,,t])")
-
-image2D(Re(FFCRM_t[,,t]), main="Re(FFCRM_t[,,t])")  # ~diag!
-#image2D(Im(FFCRM_t[,,t]), main="Im(FFCRM_t[,,t])")  # =0!
-#max(abs(Im(FFCRM_t[,,t])))
-# ==> FFCRM_t is real =>
-
-FFCRM_t=Re(FFCRM_t)
-
-i=n/3.4
-plot(FFCRM_t[i,,t])
-plot(B[i,,t])
-
-norm( Re(FCRM_t[,,t])- diag(n), "F" )
-norm( Im(FCRM_t[,,t]), "F" )
-
-D = diag( diag(FFCRM_t[,,t]) ) # leave only the diagonal in FFCRM_t
-norm(                D, "F" )
-norm( FFCRM_t[,,t],     "F" )
-norm( FFCRM_t[,,t] - D, "F" )
-
-norm( Re(FCRM_e[,,t] - FCRM_t[,,t]), "F" )
-norm( Im(FCRM_e[,,t] - FCRM_t[,,t]), "F" )
-
-image2D(Re(FCRM_e[,,t]) - diag(n), main="Re(FCRM_e[,,t]) - I")
-image2D(Im(FCRM_e[,,t]), main="Im(FCRM_e[,,t])")
-
-#-----------------------------------------------
-#-----------------------------------------------
-# Fit and evaluate SSCM 
-
- B_est      = array(0, dim=c(n,n,ntime))
-FB_est      = array(0, dim=c(n,n,ntime))
-C_tilde_mod = array(0, dim=c(n,n,ntime))
-
-uu = matrix(0,nrow=n, ncol=ntime)
-
-tru_norm=c(1:ntime)
-dmod_norm=c(1:ntime)
-rel_dmod=c(1:ntime)
-
-for (t in 1:ntime) {
-  D = mx_fft(FCRM_t[,,t], "b")
-  
-  # Fit the SSCM
-  
-  M=mx_fft(diag(v_true_full[,t]), "b") /n
-  b=diag(M %*% D %*% M)
-  N=M*t(M)
-  u=solve(N, b)  # real
-  uu[,t] = Re(u)
-  
-  U = diag(Re(u))
-    
-  C_tilde_mod[,,t] = mx_fft(U, "f")
-  
-  #image2D(Re(FCRM_t[,,t]))
-  #image2D(Re(C_tilde_mod[,,t]))
-  #image2D(Im(FCRM_t[,,t]))
-  #image2D(Im(C_tilde_mod[,,t]))
-  #plot(Re(u))
-  #lines(Re(diag(FFCRM_t[,,t])))
-  
-  
-  #FB_est[,,t] = diag(sqrt(v_opt_full[,t])) %*% C_tilde[,,t] %*% 
-  #              diag(sqrt(v_opt_full[,t]))
-  
-  # v_true
-  FB_est[,,t] = diag(sqrt(v_true_full[,t])) %*% C_tilde_mod[,,t] %*% 
-                diag(sqrt(v_true_full[,t]))
-  
-  
-  # transplant v_true & the diagonal C+: poor ==> diagonal C is not good..
-  #D = diag( diag(mx_fft(FCRM_t[,,t], "b")) )
-  #C_tilde[,,t] = mx_fft(D, "f")
-  #FB_est[,,t] = diag(sqrt(v_true_full[,t])) %*% C_tilde[,,t] %*% 
-  #              diag(sqrt(v_true_full[,t]))
-  
-  # take FCRM_t and v_S1loc:  error ~ 30%
-  #FB_est[,,t] = diag(sqrt(v_S1loc_full[,t])) %*% FCRM_t[,,t] %*% 
-  #              diag(sqrt(v_S1loc_full[,t]))
-  
-  # take FCRM_t and v_opt: small error ~15%
-  #FB_est[,,t] = diag(sqrt(v_opt_full[,t])) %*% FCRM_t[,,t] %*% 
-  #              diag(sqrt(v_opt_full[,t]))
-  
-  # take FCRM_t and v_true: OK, exact
-  #FB_est[,,t] = diag(sqrt(v_true_full[,t])) %*% FCRM_t[,,t] %*% 
-  #              diag(sqrt(v_true_full[,t]))
-  
-  B_est[,,t] = mx_fft(FB_est[,,t], "b")
-  
-  #image2D(B[,,t])
-  #image2D(Re(B_est[,,t]))
-  
-  #tru_norm[t]  = ( norm(abs(               FB[,,t]), "F") )
-  #dmod_norm[t] = ( norm(abs(FB_est[,,t]  - FB[,,t]), "F") )
-  tru_norm[t]  = norm(abs(              B[,,t]), "F")
-  dmod_norm[t] = norm(abs(B_est[,,t]  - B[,,t]), "F")
-  rel_dmod[t] = dmod_norm[t] / tru_norm[t]
-}
-
-rms_tru  = mean(tru_norm)
-rms_dmod = mean(dmod_norm)
-rms_tru
-rms_dmod
-rel_misfit=rms_dmod / rms_tru
-rel_misfit
-mean_rel_misfit=mean(rel_dmod)
-mean_rel_misfit
-
-S1loc_rel_misfit=rmse_S1loc_rel
-
-# Select the typical (as measured by the misfit) t, and plot
-
-rrel=dmod_norm / tru_norm
-t=which(abs(rrel[]-mean_rel_misfit) == min(abs(rrel[]-mean_rel_misfit)), arr.ind=TRUE)
-
-pngname=paste0("B_tru_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(B[,,t], x=grid_km, y=grid_km, xlab="Space, km", ylab="Space, km",
-        main=paste('Typical true B'),
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-B_mod=Re( B_est[,,t] )
-
-pngname=paste0("B_mod_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(B_mod, x=grid_km, y=grid_km, xlab="Space, km", ylab="Space, km",
-        main=paste('Typical model B'),
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-S_loc=S1[,,t] * LocMx
-
-pngname=paste0("S_loc_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(S_loc, x=grid_km, y=grid_km, xlab="Space, km", ylab="Space, km",
-        main=paste('Typical localized S'),
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-
-RR=Re(mx_fft_Rspe_rearrange(FB[,,t]))
-pngname=paste0("Re_SpeCVM_tru_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(RR[2:np1,2:np1],   # avoid wvn=-n/2
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="Re(Spectral CVM)",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-
-RR=Re(mx_fft_Rspe_rearrange(FCRM_t[,,t]))
-pngname=paste0("Re_SpeCRM_tru_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(RR[2:np1,2:np1],   # avoid wvn=-n/2
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="Re(Spectral CRM)",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-
-pngname=paste0("Re_SpeCRM-I_tru_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(RR[2:np1,2:np1] - diag(n),  # avoid wvn=-n/2
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="Re(Spectral CRM) - I",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-II=Im(mx_fft_Rspe_rearrange(FCRM_t[,,t]))
-pngname=paste0("Im_SpeCRM_tru_se",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(II[2:np1,2:np1],
-        x=wvns, y=wvns,
-        xlab="Wavenumber", ylab="Wavenumber",
-        main="Im(Spectral CRM)",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-
-pngname=paste0("uu",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-image2D(Re(uu),
-        x=grid_km, y=tgrid_h,
-        xlab="Time, h", ylab="Space, km",
-        main="u-vectors",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-dev.off()
-
-
-# Select the "typical" pair (t,i)  with the closest relative Quadratic ROW norms to 
-# both B_est and S1_loc
-
-rel_dmod_row=matrix(0, nrow=n, ncol=ntime)
-rel_dS1_row =matrix(0, nrow=n, ncol=ntime)
-
-for (t in 1:ntime){
-  S1loc=S1[,,t]*LocMx
-  for(i in 1:n){
-    rel_dmod_row[i,t] = sqrt( sum( (Re(B_est[i,,t])  - B[i,,t])^2 ) / sum( B[i,,t]^2 ) )
-    rel_dS1_row[i,t]  = sqrt( sum( (S1loc[i,]        - B[i,,t])^2 ) / sum( B[i,,t]^2 ) )
-  }
-}
-
-it=which( abs(rel_dmod_row - mean_rel_misfit) + abs(rel_dS1_row - S1loc_rel_misfit) == 
-      min(abs(rel_dmod_row - mean_rel_misfit) + abs(rel_dS1_row - S1loc_rel_misfit) ), 
-      arr.ind=TRUE)
-i=it[1]
-t=it[2]
-i
-t
-rel_dmod_row[i,t]
-rel_dS1_row[i,t]
-
-B_mod=Re( B_est[,,t] )
-S_loc=S1[,,t] * LocMx
-
-nx=10
-ix1=i-nx
-ix2=i+nx
-
-# extend the rows up and down using periodicity
-
-circ_km=2*pi*rekm
-ggrid=c(grid_km[] - circ_km-grid_km[i], grid_km[]-grid_km[i], grid_km[] + circ_km-grid_km[i])
-bb=c(B[i,,t], B[i,,t], B[i,,t])
-bbm=c(B_mod[i,], B_mod[i,], B_mod[i,])
-bbe=c(S_loc[i,], S_loc[i,], S_loc[i,])
-
-ixx1=ix1+n
-ixx2=ix2+n
-
-mn <- min( min(bb[ixx1:ixx2]), min(bbm[ixx1:ixx2]), min(bbe[ixx1:ixx2]) )
-mx <- max( max(bb[ixx1:ixx2]), max(bbm[ixx1:ixx2]), max(bbe[ixx1:ixx2]) )
-
-pngname=paste0("Typic3Covs_se",seed_for_secondary_fields,".png")
-png(pngname, width=7.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-plot(ggrid[ixx1:ixx2], bb[ixx1:ixx2],  ylim=c(mn,mx),
-     xlab="Space, km", ylab="Covariance", type="p", pch=1, col="black",
-     main=paste("Prior covariances"),
-     cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-lines(ggrid[ixx1:ixx2], bbm[ixx1:ixx2], 
-      type="l", lwd=1, lty=1)
-lines(ggrid[ixx1:ixx2], bbe[ixx1:ixx2], 
-      type="l", lwd=1, lty=2)
-
-leg.txt=c( 'True B',  'Model B', 'Ensemble B')
-leg.col<-c("black", "black", "black")
-legend("topright", inset=0, leg.txt, col=leg.col, lwd=c(NA,1,1), 
-       lty=c(NA,1,2), pt.lwd=2.0, pch=c(1,NA,NA),
-       cex=1.4, pt.cex=1, bg="white")
-dev.off()
-
-
-#--------------------
-# uu: 
-
-u_tmean=apply(uu, 1, mean)
-u_tsd  =apply(uu, 1, sd)
-
-mx=max(u_tmean, u_tsd)
-pngname=paste0("u_tmean_tsd",seed_for_secondary_fields,".png")
-png(pngname, width=5.1, height=5.1, units = "in", res=300)
-par(mai=c(1.2,1.2,0.7,0.7))
-plot(u_tmean, ylim=c(0,mx), type="l", lty=1,
-        main="Time mean, sd u-vectors",
-        cex.main=1.7, cex.axis=1.3, cex.lab=1.6)
-lines(u_tsd, lty=2)
-
-leg.txt=c( 'Time mean u',  'Time std u')
-leg.col<-c("black", "black")
-legend("bottom", inset=0, leg.txt, col=leg.col, lwd=c(1,1), 
-       lty=c(1,2), pt.lwd=2.0, pch=c(NA,NA),
-       cex=1.4, pt.cex=1, bg="white")
-dev.off()
-
-
-# Selected i,t stats
-
-numplot=3
-for (iplot in c(1:numplot)) {
-  
-  nt_loc=15
-  tt <- sample(c(1:ntime), nt_loc, replace = FALSE, prob = NULL) # select random time instant
-  t=tt[1]
-  
-  ii <- sample(c((n/4):(3*n/4)), nt_loc, replace = FALSE, prob = NULL)  # select random spatial point
-  i=ii[1]
-  
-  mx=max(uu)
-  
-  pngname=paste0("u_",t,"i",i,".png")
-  png(pngname, width=7.1, height=5.1, units = "in", res=300)
-  par(mai=c(1.2,1.2,0.7,0.7))
-  plot(grid_km, uu[,t],
-       xlab="Grid, km", ylab="u", 
-       type="l", ylim=c(0,mx), 
-       cex.main=1.7, cex.axis=1.3, cex.lab=1.6,
-       main=paste("u-vectors at various t") )
-  i=ii[2]
-  t=tt[2]
-  lines(grid_km, uu[,t], type="l", lty=2)
-  i=ii[3]
-  t=tt[3]
-  lines(grid_km, uu[,t], type="l", lty=3)
-
-  abline(h=0)
-  dev.off()
-  
-} # End for(iplot in c(1:numplot))  
 
 #------------------------------------------------
 # Write key findings to the file
@@ -1312,11 +1182,24 @@ print(lambda_decile_ratio)
 
 cat("\n")
 
-cat("SSCM_mean_rel_misfit=")
-print(mean_rel_misfit)
+cat("F_B_mean=")
+print(F_B_mean)
 
-cat("S1loc_rel_misfit=")
-print(S1loc_rel_misfit)
+cat("F_Bclim_mB_mean=")
+print(F_Bclim_mB_mean)
+
+cat("F_S1loc_mB_mean=")
+print(F_S1loc_mB_mean)
+
+cat("F_Tloc_mB_mean=")
+print(F_Tloc_mB_mean)
+
+cat("F_EV_mB_mean=")
+print(F_EV_mB_mean)
+
+cat("F_EVT_mB_mean=")
+print(F_EVT_mB_mean)
+
 
 
 
