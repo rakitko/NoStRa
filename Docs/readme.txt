@@ -14,25 +14,8 @@ The paper proposes a new doubly stochastic advection-diffusion-decay model defin
 spatial domain (the circle).
 It is intended to be used in testing and developing data assimilation methodologies
 as well as in a broader context of non-stationary spatio-temporal random field modeling.
-The model is hierarchical: it is a stochastic (forced by the white noise) 
-partial differential equation whose coefficients are 
-spatio-temporal random fields by themselves
-satisfying their own stochastic partial differential equations  with constant coefficients.
-The solution to the model has complex spatio-temporal covariances
-with the tunable degree of non-stationarity in space-time.
-Another important feature of the  model is that it allows the
-estimation of ``true'' space and time specific spatio-temporal covariances: 
-both the signal covariances and
-the error covariances for any filter in question. 
-This provides the researcher not only with the true state, 
-as in the Observing Systems Simulation Experiments (OSSE) methodology,
-but also with the true field and error ``covariances of the day''.
-The capabilities of the  doubly stochastic model are illustrated 
-in numerical experiments with the Ensemble Kalman Filter (EnKF).
-The capabilities of the  doubly stochastic model are illustrated 
-in numerical experiments with the Ensemble Kalman Filter (EnKF).
-It is shown that the accuracy of the forecast-ensemble sample covariance matrix
-can be substantially improved by  its temporal smoothing.
+The model is hierarchical: it is a stochastic (forced by the white noise) partial differential equation whose coefficients are spatio-temporal random fields by themselves satisfying their own stochastic partial differential equations with constant coefficients. The solution to the model is a random field that has complex spatio-temporal covariances with the tunable degree of non-stationarity. Another important feature of the model is that it allows the estimation of ``true'' space and time specific spatio-temporal covariances: both signal covariances and error covariances for any filter in question. This provides the researcher not only with the true state, as in the Observing Systems Simulation Experiments (OSSE) methodology, but also with the true error ``covariances of the day''. The capabilities of the doubly stochastic model are illustrated in numerical experiments with the Ensemble Kalman Filter (EnKF). It is shown that the accuracy of the forecast-ensemble sample covariance matrix can be substantially improved by its temporal smoothing.
+
 The main author of the R package is Alexander Rakitko rakitko@gmail.com.
 
 The corresponding author of the paper is Michael Tsyrulnikov mik.tsyrulnikov@gmail.com.
@@ -86,7 +69,7 @@ Then, in folder EnKF-covs, execute the script ExamEnKFcovs.R.
 -> Various plots related to the EnKF's prior covariances will be created.
 
 
-23 Aug 2017
+24 Aug 2017
 M.Tsyrulnikov
 A.Rakitko
 
