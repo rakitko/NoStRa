@@ -21,11 +21,11 @@ config <- read.table('./config.txt', sep = ';')
 #
 #     delta_t is the model time step, so that
 #     the time interval between the cosecutive analyses is delta_t*stride 
-#     (stride is the synonym for thin_time_for_filer)
+#     (stride is the synonym for thin_time_for_filter)
 
 dim                             <- config[config$V1 == "dim", 2]
-thin_time_for_filer             <- config[config$V1 == "stride", 2]   # model time steps in one asml cycle
-time                            <- config[config$V1 == "time_filter", 2] * thin_time_for_filer  # nu of model time steps
+thin_time_for_filter             <- config[config$V1 == "stride", 2]   # model time steps in one asml cycle
+time                            <- config[config$V1 == "time_filter", 2] * thin_time_for_filter  # nu of model time steps
 delta_t                         <- config[config$V1 == "delta_t", 2]
 Re                              <- config[config$V1 == "Re", 2]
 u_mean                          <- config[config$V1 == "u_mean", 2]
@@ -50,7 +50,7 @@ seed_for_filters                <- config[config$V1 == "seed_for_filters", 2]
 perform_enkf                    <- config[config$V1 == "perform_enkf", 2]
 compute_field_true_covs         <- config[config$V1 == "compute_field_true_covs", 2]
 
-stride=thin_time_for_filer
+stride=thin_time_for_filter
 ntime_cycles=time/stride
 ntime_model_time_steps=time
 # -----------
@@ -74,7 +74,7 @@ inflation_beta                  <- 0.4*0
 # -----------
 
 # initialize arrays and dirs
-enkf_S_nonloc_arr_mean          <- array(0, dim = c(dim, dim, time/thin_time_for_filer))
+enkf_S_nonloc_arr_mean          <- array(0, dim = c(dim, dim, time/thin_time_for_filter))
 filter                          <- list()
 dir.create(path)
 dir.create(paste0(path,'/DATA'))
@@ -109,7 +109,7 @@ parameters$L_mean               <- L
 parameters$L_perturb            <- L_perturb
 parameters$N                    <- N
 parameters$inflation_enkf_coef  <- inflation_enkf 
-parameters$stride               <- thin_time_for_filer 
+parameters$stride               <- thin_time_for_filter 
 parameters$seed_for_secondary_fields <- seed_for_secondary_fields
 parameters$seed_for_filters     <- seed_for_filters
 
@@ -174,6 +174,27 @@ if(sd_Sigma != 0){
   Sigma       <- matrix(Sigma_mean, nrow = dim, ncol = time)
 }
 
+# Estimation of B_start
+cat('Estimating of B_start')
+ind_obs     <- seq(1,dim,m)
+ind_time    <- seq(1,time,thin_time_for_filter)
+
+start_X     <- start_value(a, Sigma_mean, RHO_mean, Nu_mean, Re, dim)
+start_A     <- diag(R)
+X_temp      <- generate_field_cpp(time, dim, start_X, delta_t, U, RHO, Sigma, Nu, 1, create_cov_matrix)
+OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
+OBS         <- X_temp[ind_obs,] +sqrt(R)*OBS_NOISE
+X_true      <- X_temp[,ind_time]
+kalman_res  <- kalman(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS_NOISE, start_X, start_A, thin_time_for_filter)
+
+# временный вывод 
+plot(kalman_res$B_arr[,1,1])
+#View(kalman_res$X_a)
+#View(kalman_res$X_f)
+mean(abs(kalman_res$X_a[1,ind_time] - X_temp[1,ind_time]))
+mean(abs(kalman_res$X_f[1,ind_time] - X_temp[1,ind_time]))
+mean(abs(kalman_res$X_a[1,ind_time+1] - X_temp[1,ind_time+1]))
+mean(abs(kalman_res$X_f[1,ind_time+1] - X_temp[1,ind_time+1]))
 #------------------------------------------------------
 # Worlds
 
@@ -183,7 +204,7 @@ print('Generating worlds')
 for(iter in 1:TOTAL){  
   cat("\r",paste0(round(iter/TOTAL*100,0),'%'))
   ind_obs     <- seq(1,dim,m)
-  ind_time    <- seq(1,time,thin_time_for_filer)
+  ind_time    <- seq(1,time,thin_time_for_filter)
   
   start_X     <- start_value(a, Sigma_mean, RHO_mean, Nu_mean, Re, dim)
   X[[iter]]   <- generate_field_cpp(time, dim, start_X, delta_t, U, RHO, Sigma, Nu, 1, create_cov_matrix)
@@ -195,16 +216,16 @@ for(iter in 1:TOTAL){
     filter$xi_sparse <- X[[iter]][,ind_time]
   }
   
-  if(perform_enkf == 1){
-
+  # perform KF to estimate B_start
   
+  if(perform_enkf == 1){
     OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
     OBS         <- X[[iter]][ind_obs,] +sqrt(R)*OBS_NOISE
 
     start_X     <- X[[iter]][,1]
     enkf_res    <- ensembl_kalman_cpp(time, dim, delta_t, U, RHO, Sigma, Nu,
                                  1, R, ind_obs-1, OBS, start_X,
-                                 create_cov_matrix, N, inflation_enkf_bounds, inflation_enkf_coef, C_enkf, thin_time_for_filer)
+                                 create_cov_matrix, N, inflation_enkf_bounds, inflation_enkf_coef, C_enkf, thin_time_for_filter)
 
     enkf_S_nonloc_arr_mean   <- enkf_S_nonloc_arr_mean + enkf_res$S_nonloc_arr
     if(iter == TOTAL){
@@ -242,12 +263,12 @@ print('EnKF')
 if(perform_enkf == 1){
   enkf_S_nonloc_arr_mean        <- enkf_S_nonloc_arr_mean / TOTAL
   
-  Cov_mat_enkf                  <- array(0, dim = c(dim, dim, time / thin_time_for_filer))
+  Cov_mat_enkf                  <- array(0, dim = c(dim, dim, time / thin_time_for_filter))
   
   for(iter in 1:TOTAL){
     load(paste0(path,'/DATA/truth_',iter,'.Rdata'))  
     load(paste0(path,'/DATA/enkf_',iter,'.Rdata'))  
-    for(step in 1:(time/thin_time_for_filer)){
+    for(step in 1:(time/thin_time_for_filter)){
       Cov_mat_enkf[,,step] <- Cov_mat_enkf[,,step] + ((enkf_res$X_f[,step] - X_true[,step])) %*% t(enkf_res$X_f[,step] - X_true[,step])
     }
     cat("\r",paste0(round(iter/TOTAL*100,0),'%'))

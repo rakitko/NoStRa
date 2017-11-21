@@ -148,7 +148,9 @@ lorenz <- function(time, dim, start_X, delta_t, F_X){
   return(t(as.matrix(out)))
 }
 
-kalman <- function(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS_NOISE, start_X, start_A){
+kalman <- function(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS, start_X, start_A, thin_time_for_filer){
+  # в данной функции мы будем заполнять массивы для любого момента времени, затем массивы можно 
+  # профильтровать только по тем моментам, в которые был анализ
   X_a           <- matrix(NA, nrow = dim, ncol = time)
   X_f           <- matrix(NA, nrow = dim, ncol = time)
   B_arr         <- array(NA,c(time,dim,dim))
@@ -163,38 +165,42 @@ kalman <- function(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS_NOISE, 
   A_arr[1,,]    <- start_A
   PHI           <- apply(start_A,2, function(x) predict(dim, delta_x, delta_t, U[,2], Nu[,2], RHO[,2], x, rep(0,dim))) 
   B             <- apply(t(PHI),2, function(x) predict(dim, delta_x, delta_t, U[,2], Nu[,2], RHO[,2], x, rep(0,dim))) 
-  B             <- B + diag(Sigma[,2])%*%C%*%C%*%diag(Sigma[,2])*delta_x*delta_t
+  B             <- B + diag(Sigma[,2])%*%C%*%C%*%diag(Sigma[,2])/delta_x*delta_t
   
   ind_obs       <- seq(1,dim,m)
   
   for(i in 2:time){
+    # записываем B в массив для выдачи
     B_arr[i,,]    <- B
-    
-    y             <- X[ind_obs,i] + sqrt(R)*OBS_NOISE[,i]              
     BH            <- B[,ind_obs]
     HBH           <- B[ind_obs, ind_obs]
-    X_f[,i]       <- predict(dim, delta_x, delta_t, U[,i], Nu[,i], RHO[,i], X_a[,i-1], rep(0,dim))  
-    z             <- solve(HBH + diag(R), y-X_f[ind_obs,i])
-    X_a[,i]       <- X_f[,i] + BH %*% z
-    #A             <- B - BH %*% solve(HBH+diag(R)) %*% t(BH)
-    K  <- BH %*% solve(HBH + diag(R))
-    #A             <- (diag(rep(1,length(ind_obs))) - K[,ind_obs])%*% B %*% t(diag(rep(1,length(ind_obs))) - K[,ind_obs]) + K%*%diag(R)%*%t(K)
-    #A             <- (diag(rep(1,dim)) - K,ind_obs])%*% B %*% t(diag(rep(1,dim)) - K[,ind_obs]) + K%*%diag(R)%*%t(K)
-    A     <- B - K%*%B[ind_obs,]
-    #A             <- B - K %*% t(BH) - BH%*% t(K) +K %*% HBH %*% t(K) + K%*%diag(R)%*%t(K)
-    A_arr[i,,]    <- A
+    # делаем прогноз (на основании прогноза/анализа на предыдущем шаге)
+    X_f[,i]       <- predict(dim, delta_x, delta_t, U[,i], Nu[,i], RHO[,i], X_a[,i-1], rep(0,dim))
+    if(((i+1) %% thin_time_for_filter) != 0){
+      # если мы не на шаге, на котором надо делать усвоение, то в анализ записываем прогноз
+      X_a[,i]       <- X_f[,i]
+    }else{
+      # если мы на шаге, на котором надо делать усвоение, то делаем анализ
+      y             <- OBS[,i]
+      z             <- solve(HBH + diag(R), y-X_f[ind_obs,i])
+      X_a[,i]       <- X_f[,i] + BH %*% z
+    }
     if(i < time){
+      # вычисляем матрицу А, сохраняем в массив, вычисляем матрицу В для следующего шага
+      #A             <- B - BH %*% solve(HBH+diag(R)) %*% t(BH)
+      K             <- BH %*% solve(HBH + diag(R))
+      #A             <- (diag(rep(1,length(ind_obs))) - K[,ind_obs])%*% B %*% t(diag(rep(1,length(ind_obs))) - K[,ind_obs]) + K%*%diag(R)%*%t(K)
+      #A             <- (diag(rep(1,dim)) - K,ind_obs])%*% B %*% t(diag(rep(1,dim)) - K[,ind_obs]) + K%*%diag(R)%*%t(K)
+      A             <- B - K%*%B[ind_obs,]
+      #A             <- B - K %*% t(BH) - BH%*% t(K) +K %*% HBH %*% t(K) + K%*%diag(R)%*%t(K)
+      A_arr[i,,]    <- A
       PHI           <- apply(A,2, function(x) predict(dim, delta_x, delta_t, U[,i+1], Nu[,i+1], RHO[,i+1], x, rep(0,dim))) 
       B             <- apply(t(PHI),2, function(x) predict(dim, delta_x, delta_t, U[,i+1], Nu[,i+1], RHO[,i+1], x, rep(0,dim))) 
-      B             <- B + diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])*delta_x*delta_t
+      B             <- B + diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])/delta_x*delta_t
       #!!!
       #B             <- A + diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])
       #B             <- t(B)
     }
-    
-    #eig_decomp <- eigen(B)
-    #print(sum(diag(B)))
-    #print(c(i,eig_decomp$values[30]))
   }
   return(list(X_a=X_a, X_f=X_f, B_arr = B_arr, A_arr = A_arr, A_arr_mod = A_arr_mod))
 }
