@@ -162,41 +162,43 @@ kalman <- function(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS, start_
   delta_x       <- 2*pi*Re/dim
   C             <- create_cov_matrix(dim, rep(1,dim), L_C)
   
+  start_A       <- start_A + diag(Sigma[,2])%*%C%*%C%*%diag(Sigma[,2])/delta_x*delta_t
   A_arr[1,,]    <- start_A
   PHI           <- apply(start_A,2, function(x) predict(dim, delta_x, delta_t, U[,2], Nu[,2], RHO[,2], x, rep(0,dim))) 
   B             <- apply(t(PHI),2, function(x) predict(dim, delta_x, delta_t, U[,2], Nu[,2], RHO[,2], x, rep(0,dim))) 
-  B             <- B + diag(Sigma[,2])%*%C%*%C%*%diag(Sigma[,2])/delta_x*delta_t
+  #B             <- B + diag(Sigma[,2])%*%C%*%C%*%diag(Sigma[,2])/delta_x*delta_t
   
   ind_obs       <- seq(1,dim,m)
   
   for(i in 2:time){
-    # записываем B в массив для выдачи
+    # put B into the array for output
     B_arr[i,,]    <- B
     BH            <- B[,ind_obs]
     HBH           <- B[ind_obs, ind_obs]
-    # делаем прогноз (на основании прогноза/анализа на предыдущем шаге)
+    # perform the forecast
     X_f[,i]       <- predict(dim, delta_x, delta_t, U[,i], Nu[,i], RHO[,i], X_a[,i-1], rep(0,dim))
     if(((i+1) %% thin_time_for_filter) != 0){
-      # если мы не на шаге, на котором надо делать усвоение, то в анализ записываем прогноз
+      # step without assimilation
       X_a[,i]       <- X_f[,i]
     }else{
-      # если мы на шаге, на котором надо делать усвоение, то делаем анализ
+      # if it is the assimilation step, we perform the assimilation
       y             <- OBS[,i]
       z             <- solve(HBH + diag(R), y-X_f[ind_obs,i])
       X_a[,i]       <- X_f[,i] + BH %*% z
     }
     if(i < time){
-      # вычисляем матрицу А, сохраняем в массив, вычисляем матрицу В для следующего шага
+      # calculate amtrix A, put into the array, calculate B for the next step
       #A             <- B - BH %*% solve(HBH+diag(R)) %*% t(BH)
       K             <- BH %*% solve(HBH + diag(R))
       #A             <- (diag(rep(1,length(ind_obs))) - K[,ind_obs])%*% B %*% t(diag(rep(1,length(ind_obs))) - K[,ind_obs]) + K%*%diag(R)%*%t(K)
       #A             <- (diag(rep(1,dim)) - K,ind_obs])%*% B %*% t(diag(rep(1,dim)) - K[,ind_obs]) + K%*%diag(R)%*%t(K)
       A             <- B - K%*%B[ind_obs,]
       #A             <- B - K %*% t(BH) - BH%*% t(K) +K %*% HBH %*% t(K) + K%*%diag(R)%*%t(K)
+      A             <- A+ diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])/delta_x*delta_t
       A_arr[i,,]    <- A
       PHI           <- apply(A,2, function(x) predict(dim, delta_x, delta_t, U[,i+1], Nu[,i+1], RHO[,i+1], x, rep(0,dim))) 
       B             <- apply(t(PHI),2, function(x) predict(dim, delta_x, delta_t, U[,i+1], Nu[,i+1], RHO[,i+1], x, rep(0,dim))) 
-      B             <- B + diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])/delta_x*delta_t
+      #B             <- B + diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])/delta_x*delta_t
       #!!!
       #B             <- A + diag(Sigma[,i+1])%*%C%*%C%*%diag(Sigma[,i+1])
       #B             <- t(B)
@@ -206,23 +208,29 @@ kalman <- function(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS, start_
 }
 
 
-VAR <- function(time, dim, delta_t, U, RHO, Sigma, Nu, R, m, OBS_NOISE, start_X, start_B, inflation_var){
+VAR <- function(time, dim, delta_t, U, RHO, Sigma, Nu, R, m, OBS, start_X, B_kalman_mean, inflation_var, thin_time_for_filer){
   X_a           <- matrix(NA, nrow = dim, ncol = time)
   X_f           <- matrix(NA, nrow = dim, ncol = time)
   X_a[,1]       <- start_X
   Re            <- 6370000  
   delta_x       <- 2*pi*Re/dim
-  B             <- start_B * inflation_var
+  B             <- B_kalman_mean * inflation_var
   ind_obs       <- seq(1,dim,m)
   BH            <- B[,ind_obs]
-  HBH           <- B[ind_obs, ind_obs]  
+  HBH           <- B[ind_obs, ind_obs]
   for(i in 2:time){
-    y             <- X[ind_obs,i] + sqrt(R)*OBS_NOISE[,i]              
-    X_f[,i]       <- predict(dim, delta_x, delta_t, U[,i], Nu[,i], RHO[,i], X_a[,i-1], rep(0,dim))  
-    z             <- solve(HBH + diag(R), y-X_f[ind_obs,i])
-    X_a[,i]       <- X_f[,i] + BH %*% z
+    X_f[,i]       <- predict(dim, delta_x, delta_t, U[,i], Nu[,i], RHO[,i], X_a[,i-1], rep(0,dim))
+    if(((i+1) %% thin_time_for_filter) != 0){
+      # step without assimilation
+      X_a[,i]       <- X_f[,i]
+    }else{
+      # if it is the assimilation step, we perform the assimilation
+      y             <- OBS[,i]
+      z             <- solve(HBH + diag(R), y-X_f[ind_obs,i])
+      X_a[,i]       <- X_f[,i] + BH %*% z
+    }
   }
-  return(list(X_a=X_a))
+  return(list(X_a=X_a, X_f=X_f))
 }
 
 

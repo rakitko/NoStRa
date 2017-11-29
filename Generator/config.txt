@@ -1,6 +1,6 @@
 dim;60
 stride;2
-time_filter;30
+time_filter;3000
 delta_t;21600
 Re;6370000
 u_mean;10
@@ -20,7 +20,9 @@ localization_mult;0.9
 L_mult;5
 L_perturb_mult;1
 inflation_enkf;1.08
+inflation_var;1
 seed_for_secondary_fields;101520
 seed_for_filters;201520
 perform_enkf;1
+perform_VAR;1
 compute_field_true_covs;1

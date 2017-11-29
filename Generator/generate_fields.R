@@ -45,9 +45,11 @@ localization_mult               <- config[config$V1 == "localization_mult", 2]
 L_mult                          <- config[config$V1 == "L_mult", 2]
 L_perturb_mult                  <- config[config$V1 == "L_perturb_mult", 2]
 inflation_enkf                  <- config[config$V1 == "inflation_enkf", 2]
+inflation_var                   <- config[config$V1 == "inflation_var", 2]
 seed_for_secondary_fields       <- config[config$V1 == "seed_for_secondary_fields", 2]
 seed_for_filters                <- config[config$V1 == "seed_for_filters", 2]
 perform_enkf                    <- config[config$V1 == "perform_enkf", 2]
+perform_VAR                     <- config[config$V1 == "perform_VAR", 2]
 compute_field_true_covs         <- config[config$V1 == "compute_field_true_covs", 2]
 
 stride=thin_time_for_filter
@@ -180,21 +182,24 @@ ind_obs     <- seq(1,dim,m)
 ind_time    <- seq(1,time,thin_time_for_filter)
 
 start_X     <- start_value(a, Sigma_mean, RHO_mean, Nu_mean, Re, dim)
-start_A     <- diag(R)
+start_A     <- diag(rep(mean(R), dim))
 X_temp      <- generate_field_cpp(time, dim, start_X, delta_t, U, RHO, Sigma, Nu, 1, create_cov_matrix)
 OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
 OBS         <- X_temp[ind_obs,] +sqrt(R)*OBS_NOISE
 X_true      <- X_temp[,ind_time]
-kalman_res  <- kalman(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS_NOISE, start_X, start_A, thin_time_for_filter)
+kalman_res  <- kalman(time, dim, delta_t, U, RHO, Sigma, Nu, L_C, R, m, OBS, start_X, start_A, thin_time_for_filter)
 
-# временный вывод 
-plot(kalman_res$B_arr[,1,1])
-#View(kalman_res$X_a)
-#View(kalman_res$X_f)
-mean(abs(kalman_res$X_a[1,ind_time] - X_temp[1,ind_time]))
-mean(abs(kalman_res$X_f[1,ind_time] - X_temp[1,ind_time]))
-mean(abs(kalman_res$X_a[1,ind_time+1] - X_temp[1,ind_time+1]))
-mean(abs(kalman_res$X_f[1,ind_time+1] - X_temp[1,ind_time+1]))
+# # временный вывод 
+# plot(kalman_res$B_arr[,1,1])
+# #View(kalman_res$X_a)
+# #View(kalman_res$X_f)
+# tmom <- 1
+# rmse(kalman_res$X_a[tmom,ind_time], X_temp[tmom,ind_time])
+# rmse(kalman_res$X_f[tmom,ind_time], X_temp[tmom,ind_time])
+# rmse(kalman_res$X_a[tmom,ind_time+1], X_temp[tmom,ind_time+1])
+# rmse(kalman_res$X_f[tmom,ind_time+1], X_temp[tmom,ind_time+1])
+
+B_kalman_mean <- apply(kalman_res$B_arr,c(2,3),function(x) mean(x, na.rm = TRUE))
 #------------------------------------------------------
 # Worlds
 
@@ -216,13 +221,12 @@ for(iter in 1:TOTAL){
     filter$xi_sparse <- X[[iter]][,ind_time]
   }
   
-  # perform KF to estimate B_start
+  OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
+  OBS         <- X[[iter]][ind_obs,] +sqrt(R)*OBS_NOISE
+  
+  start_X     <- X[[iter]][,1]
   
   if(perform_enkf == 1){
-    OBS_NOISE   <- matrix(rnorm((dim%/%m+min(1,dim%%m))*time,0,1),nrow=dim%/%m+min(1,dim%%m),ncol=time)
-    OBS         <- X[[iter]][ind_obs,] +sqrt(R)*OBS_NOISE
-
-    start_X     <- X[[iter]][,1]
     enkf_res    <- ensembl_kalman_cpp(time, dim, delta_t, U, RHO, Sigma, Nu,
                                  1, R, ind_obs-1, OBS, start_X,
                                  create_cov_matrix, N, inflation_enkf_bounds, inflation_enkf_coef, C_enkf, thin_time_for_filter)
@@ -235,6 +239,12 @@ for(iter in 1:TOTAL){
     enkf_res$B_arr    <- NULL
     save(enkf_res, file = paste0(path,'/DATA/enkf_',iter, '.Rdata'))
   }
+  
+  if(perform_VAR == 1){
+    VAR_res    <- VAR(time, dim, delta_t, U, RHO, Sigma, Nu, R, m, OBS, start_X, B_kalman_mean, inflation_var)
+    save(VAR_res, file = paste0(path,'/DATA/VAR_',iter, '.Rdata'))
+  }
+  
 }
 
 #-----------------------------------------------
